@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>แอดมิน - ออเดอร์พิซซ่า</title>
+<style>
+  :root{
+    --tomato:#c1372b; --tomato-dark:#912a21; --cheese:#f4b942;
+    --basil:#4b6043; --crust:#fff4dc; --crust-2:#f7e6bf;
+    --charcoal:#2c2117; --olive:#7c8b5e; --paper:#fffaf0;
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; font-family:sans-serif; background:var(--crust); color:var(--charcoal); padding:1rem; }
+  h1{ font-size:1.3rem; }
+  .login-box{ max-width:320px; margin:4rem auto; background:var(--paper); border-radius:14px; padding:1.5rem; box-shadow:0 4px 14px rgba(0,0,0,.15); text-align:center; }
+  .login-box input{ width:100%; padding:0.7rem; font-size:1.2rem; text-align:center; letter-spacing:4px; border:2px solid var(--crust-2); border-radius:10px; margin:1rem 0; }
+  .login-box button{ width:100%; padding:0.7rem; background:var(--tomato); color:#fff; border:none; border-radius:10px; font-weight:700; font-size:1rem; cursor:pointer; }
+  #dashboard{ display:none; max-width:640px; margin:0 auto; }
+  .order-card{ background:var(--paper); border:2px solid var(--crust-2); border-radius:14px; padding:1rem; margin-bottom:0.8rem; }
+  .order-card.accepted{ opacity:0.55; }
+  .order-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; }
+  .order-head b{ font-family:monospace; font-size:1.1rem; }
+  .status-pill{ font-size:0.75rem; font-weight:700; padding:0.2rem 0.6rem; border-radius:10px; }
+  .status-pill.pending{ background:var(--cheese); color:var(--charcoal); }
+  .status-pill.accepted{ background:var(--basil); color:#fff; }
+  .order-detail{ font-size:0.85rem; line-height:1.6; }
+  .accept-btn{ width:100%; margin-top:0.7rem; padding:0.6rem; background:var(--basil); color:#fff; border:none; border-radius:10px; font-weight:700; cursor:pointer; }
+  .accept-btn:disabled{ background:var(--olive); cursor:not-allowed; }
+  .empty{ text-align:center; color:var(--olive); margin-top:3rem; }
+  .refresh-note{ text-align:center; font-size:0.75rem; color:var(--olive); margin-bottom:1rem; }
+</style>
+</head>
+<body>
+
+<div class="login-box" id="loginBox">
+  <h1>🍕 แอดมิน</h1>
+  <input type="password" id="pinInput" placeholder="รหัส PIN" inputmode="numeric">
+  <button onclick="login()">เข้าสู่ระบบ</button>
+  <p id="loginError" style="color:var(--tomato-dark); font-size:0.8rem;"></p>
+</div>
+
+<div id="dashboard">
+  <h1>🍕 รายการออเดอร์</h1>
+  <div class="refresh-note">รีเฟรชอัตโนมัติทุก 5 วินาที</div>
+  <div id="orderList"></div>
+</div>
+
+<script>
+  const BACKEND_URL = 'https://pizza-shop-backend.onrender.com'; // แก้เป็น URL จริงหลัง deploy
+  let adminPin = '';
+
+  function login(){
+    const pin = document.getElementById('pinInput').value.trim();
+    if(!pin){ return; }
+    adminPin = pin;
+    fetchOrders(true);
+  }
+
+  async function fetchOrders(isLoginAttempt){
+    try{
+      const res = await fetch(`${BACKEND_URL}/api/shop/orders?pin=${encodeURIComponent(adminPin)}`);
+      if(res.status === 401){
+        if(isLoginAttempt) document.getElementById('loginError').textContent = 'รหัส PIN ไม่ถูกต้อง';
+        return;
+      }
+      const orders = await res.json();
+      document.getElementById('loginBox').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      renderOrders(orders);
+    }catch(err){
+      if(isLoginAttempt) document.getElementById('loginError').textContent = 'เชื่อมต่อ backend ไม่สำเร็จ';
+    }
+  }
+
+  function renderOrders(orders){
+    const el = document.getElementById('orderList');
+    if(orders.length === 0){
+      el.innerHTML = '<div class="empty">ยังไม่มีออเดอร์เข้ามา</div>';
+      return;
+    }
+    el.innerHTML = orders.map(o => {
+      const tablesTxt = (o.tables||[]).map(t => `โต๊ะ ${t.table} ×${t.qty}`).join(', ');
+      return `
+        <div class="order-card ${o.status==='accepted'?'accepted':''}">
+          <div class="order-head">
+            <b>#${o.orderNo}</b>
+            <span class="status-pill ${o.status}">${o.status==='accepted' ? '✅ รับแล้ว' : '🟡 รอรับ'}</span>
+          </div>
+          <div class="order-detail">
+            ชื่อ: ${o.name || '-'} | เบอร์: ${o.phone || '-'}<br>
+            ${tablesTxt}<br>
+            ยอดรวม: ${o.total || 0} บาท | ${o.date || ''} ${o.time || ''}
+            ${o.notes ? `<br>หมายเหตุ: ${o.notes}` : ''}
+          </div>
+          <button class="accept-btn" ${o.status==='accepted'?'disabled':''} onclick="acceptOrder('${o.orderNo}')">
+            ${o.status==='accepted' ? '✅ รับออเดอร์แล้ว' : '✅ รับออเดอร์นี้'}
+          </button>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function acceptOrder(orderNo){
+    await fetch(`${BACKEND_URL}/api/shop/orders/${orderNo}/accept?pin=${encodeURIComponent(adminPin)}`, { method:'POST' });
+    fetchOrders(false);
+  }
+
+  setInterval(()=>{ if(adminPin) fetchOrders(false); }, 5000);
+</script>
+
+</body>
+</html>
